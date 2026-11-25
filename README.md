@@ -1,5 +1,7 @@
 # EventCart
 
+[![CI](https://github.com/myeongjin123/eventcart/actions/workflows/ci.yml/badge.svg)](https://github.com/myeongjin123/eventcart/actions/workflows/ci.yml)
+
 선착순 한정 수량 이벤트 쇼핑몰 백엔드. 동시 주문 상황에서 **초과 판매 0건, 1인 구매 제한 보장**을 목표로 한다.
 
 - Java 21 · Spring Boot 3.5 · Spring Data JPA · MySQL 8 · Gradle
