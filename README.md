@@ -105,4 +105,4 @@ curl -s -XPOST localhost:8080/api/orders/1/payment -H "$H" -H "$U" -d '{"method"
 
 ## 다음 단계
 
-로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **7단계: Docker 배포와 모니터링**(Actuator, Prometheus, Grafana).
+로드맵은 [docs/DESIGN.md §9](docs/DESIGN.md#9-로드맵) 참고. 바로 다음은 **7단계: Docker 배포와 모니터링**(Actuator, Prometheus, Grafana).
