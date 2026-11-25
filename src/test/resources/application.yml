@@ -11,7 +11,15 @@ spring:
       hibernate:
         default_batch_fetch_size: 100
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
 app:
+  stock-gate:
+    # 테스트 컨텍스트마다 새 DB(create-drop)이므로 Redis 키도 매번 새로
+    key-prefix: eventcart-test-${random.uuid}
   jwt:
     secret: dGVzdC1vbmx5LWV2ZW50Y2FydC1qd3Qtc2VjcmV0LWtleS0xMjM0NTY3ODkw
     access-token-validity: 1h

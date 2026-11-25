@@ -169,9 +169,25 @@ erDiagram
 |---|---|---|
 | 낙관적 락 (`@Version`) | 충돌 시 재시도 | 충돌률 높을 때 성능 저하 |
 | 원자적 UPDATE | `UPDATE ... SET remaining = remaining - ? WHERE remaining >= ?` | 1인 제한은 별도 처리 필요 |
-| Redis `DECR` / Lua | DB 앞단에서 재고 선차감 | DB-Redis 정합성, 보상 처리 |
+| **Redis Lua 게이트 (4단계 구현)** | DB 앞단에서 재고·1인 제한 선확인 | DB-Redis 정합성, 보상 처리 |
 | Redisson 분산 락 | 다중 인스턴스 | 락 획득 대기 시간 |
 | 대기열 (Redis Sorted Set) | 트래픽 제어 | 사용자 경험 |
+
+### 2단계 (4단계 구현): Redis 재고 게이트 + DB 최종 검증
+
+```
+OrderFacade (트랜잭션 없음)
+  ├─ Redis Lua: 1인 제한·재고 확인 후 예약 ──실패──▶ 409 즉시 응답 (DB 접근 없음)
+  ├─ OrderService (트랜잭션): 위 1단계 흐름 그대로 (비관적 락, 최종 검증)
+  └─ DB 실패 시 Redis 예약 반납 (보상)
+취소: DB 취소 확정 후 Redis 반납
+```
+
+- **DB가 최종 기준.** Redis가 틀려도 초과 판매는 DB 락이 막는다. Redis가 틀릴 수 있는 방향은 "덜 팔림"뿐(반납 실패 등)이다.
+- 키: `{prefix}:{event-product:ID}`(stock, limit, name 해시) + `...:buyers`(회원별 구매 수량). 해시 태그로 Cluster에서도 같은 슬롯.
+- 초기화: 이벤트 상품 등록 커밋 직후 미리 채움. 키가 없으면(Redis 재시작) 주문 시 DB에서 남은 재고·회원별 구매 수량을 읽어 지연 초기화.
+- 반납은 트랜잭션이 끝난 뒤(롤백 포함)에 한다. 롤백 전에 반납하면 그 재고를 다른 요청이 먼저 예약할 수 있다.
+- 남은 과제: Redis와 DB 재고를 주기적으로 맞추는 대사(reconciliation) 작업, 반납 실패 재시도.
 
 ## 7. 패키지 구조
 
@@ -183,7 +199,7 @@ com.eventcart
  ├─ product
  ├─ event       (Event, EventProduct)
  ├─ cart
- └─ order       (Order, OrderItem, OrderService ← 동시성 핵심)
+ └─ order       (Order, OrderItem, OrderService ← 동시성 핵심, OrderFacade, stock/StockGate ← Redis)
 ```
 
 도메인별 패키지 안에 `controller / service / repository / domain / dto`를 둔다.
@@ -195,7 +211,7 @@ com.eventcart
 | 1 (완료) | 도메인·API·비관적 락 주문, 동시성 테스트 | 초기 코드, 본 문서 |
 | 2 (완료) | Spring Security + JWT, 관리자/사용자 권한 분리 | `X-Member-Id` 제거, AuthApiTest |
 | 3 (완료) | k6 부하 테스트로 비관적 락 기준치 측정 (hot vs spread) | [LOAD_TEST.md](LOAD_TEST.md) |
-| 4 | Redis 재고 선차감 + 대기열 | 성능 개선 수치 |
+| 4 (완료) | Redis 재고 게이트 (Lua 원자 예약 + 실패 시 반납) | [LOAD_TEST.md](LOAD_TEST.md) 전후 비교 |
 | 5 | Testcontainers(MySQL·Redis), GitHub Actions CI | 배지, 자동 테스트 |
 | 6 | 결제 모의 연동 + 미결제 주문 자동 취소(스케줄러) | 주문 상태 머신 |
 | 7 | Docker 배포 (AWS/NCP), 모니터링 (Actuator + Prometheus/Grafana) | 운영 경험 |

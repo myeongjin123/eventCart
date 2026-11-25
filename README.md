@@ -10,14 +10,15 @@
 ## 실행
 
 ```bash
-# 1) 테스트 (H2 인메모리, 외부 의존성 없음)
+# 1) 테스트 (DB는 H2 인메모리, Redis는 로컬 6379 필요)
+docker compose up -d redis
 ./gradlew test
 
 # 2) MySQL로 실행
 docker compose up -d
 ./gradlew bootRun
 
-# 2') DB 없이 H2로 실행
+# 2') MySQL 없이 H2로 실행 (Redis는 필요)
 ./gradlew bootRun --args='--spring.profiles.active=h2'
 ```
 
@@ -63,6 +64,8 @@ curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
 
 ## 동시성 처리 요약
 
+4단계부터 주문은 `OrderFacade`를 거친다: **Redis에서 재고·1인 제한 예약 → DB 주문 → 실패 시 예약 반납**. 품절 요청은 DB에 가지 않는다. DB는 아래 방식으로 최종 검증한다.
+
 `OrderService.placeOrder`
 
 1. 주문할 이벤트 상품 행을 **id 오름차순 `SELECT … FOR UPDATE`** (데드락 방지)
@@ -74,17 +77,19 @@ curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
 - 재고 10개 / 100명 동시 주문 → 성공 10, `OUT_OF_STOCK` 90, 잔여 0
 - 1인 제한 2개 / 같은 회원 20회 동시 주문 → 성공 2, `PURCHASE_LIMIT_EXCEEDED` 18
 
-## 부하 테스트 (3단계)
+## 부하 테스트
 
-회원 500명 · VU 100 · 재고 100개 (GitHub Actions 2코어 러너)
+회원 500명 · VU 100 · 재고 100개 · 인기 상품 1개 집중 (GitHub Actions 2코어 러너, 2회 범위)
 
-| 시나리오 | 처리량 | p95 | 초과 판매 |
-|---|---|---|---|
-| 인기 상품 1개 집중 | 약 110~126 건/초 | 약 1.5초 | 0 |
-| 상품 10개 분산 | 약 235~310 건/초 | 약 0.7~1.0초 | 0 |
+| 지표 | 3단계 (DB 락만) | 4단계 (+ Redis 게이트) |
+|---|---|---|
+| 처리량 | 110~126 건/초 | 191~303 건/초 |
+| 전체 응답 p50 | 617~713 ms | 36~66 ms |
+| 품절 안내 p50 | 락 대기 | 31~55 ms |
+| 초과 판매 | 0 | 0 |
 
 자세한 조건과 해석: [docs/LOAD_TEST.md](docs/LOAD_TEST.md)
 
 ## 다음 단계
 
-로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **4단계: Redis 재고 선차감**으로 품절 요청을 DB 락 없이 빠르게 거절.
+로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **5단계: Testcontainers**로 테스트가 실제 MySQL·Redis에서 돌게 하기.

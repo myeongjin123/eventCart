@@ -1,7 +1,6 @@
 package com.eventcart.order.service;
 
 import com.eventcart.cart.repository.CartItemRepository;
-import com.eventcart.cart.repository.CartLine;
 import com.eventcart.common.exception.BusinessException;
 import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.event.domain.EventProduct;
@@ -25,7 +24,8 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 주문 = 재고 차감. 동시성 전략(1단계): 이벤트 상품 행 비관적 락.
+ * 주문 = 재고 차감 (DB가 최종 기준). 동시성 전략: 이벤트 상품 행 비관적 락.
+ * 4단계부터 컨트롤러는 {@link OrderFacade}를 거친다. Redis에서 먼저 걸러진 요청만 여기 도달한다.
  *
  * <p>READ_COMMITTED를 쓰는 이유: MySQL 기본값인 REPEATABLE_READ에서는 락을 기다린 뒤 실행하는
  * 일반 SELECT(회원 누적 구매 수량)가 트랜잭션 초기 스냅샷을 읽어, 같은 회원의 동시 주문이
@@ -50,18 +50,16 @@ public class OrderService {
         return OrderDto.Response.from(order);
     }
 
-    /** 장바구니 전체를 한 트랜잭션으로 주문한다. 하나라도 실패하면 전체 롤백. */
+    /**
+     * 장바구니 주문을 한 트랜잭션으로 처리한다. 하나라도 실패하면 전체 롤백.
+     *
+     * @param quantities OrderFacade가 읽어 Redis에 예약한 장바구니 내용 (eventProductId → 수량).
+     *                   여기서 장바구니를 다시 읽지 않는다: 그 사이 장바구니가 바뀌면 예약 수량과 어긋난다.
+     */
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public OrderDto.Response checkout(Long memberId) {
+    public OrderDto.Response checkout(Long memberId, Map<Long, Integer> quantities) {
         Member member = memberService.getMember(memberId);
-        List<CartLine> lines = cartItemRepository.findLinesByMemberId(memberId);
-        if (lines.isEmpty()) {
-            throw new BusinessException(ErrorCode.CART_EMPTY);
-        }
-        Map<Long, Integer> quantities = new TreeMap<>();
-        lines.forEach(line -> quantities.merge(line.eventProductId(), line.quantity(), Integer::sum));
-
-        Order order = placeOrder(member, quantities);
+        Order order = placeOrder(member, new TreeMap<>(quantities));
         OrderDto.Response response = OrderDto.Response.from(order);
         cartItemRepository.deleteByMemberIdAndEventProductIds(memberId, quantities.keySet());
         return response;

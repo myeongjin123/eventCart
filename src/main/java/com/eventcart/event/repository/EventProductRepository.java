@@ -4,6 +4,7 @@ import com.eventcart.event.domain.EventProduct;
 import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -22,4 +23,7 @@ public interface EventProductRepository extends JpaRepository<EventProduct, Long
             order by ep.id
             """)
     List<EventProduct> findAllByIdInForUpdate(@Param("ids") Collection<Long> ids);
+
+    @Query("select ep from EventProduct ep join fetch ep.product where ep.id = :id")
+    Optional<EventProduct> findWithProductById(@Param("id") Long id);
 }

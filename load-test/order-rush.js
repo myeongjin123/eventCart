@@ -25,6 +25,8 @@ const orderSuccess = new Counter('order_success');   // 201
 const orderSoldOut = new Counter('order_sold_out');  // 409 OUT_OF_STOCK
 const orderError = new Counter('order_error');       // 그 밖의 응답
 const orderDuration = new Trend('order_duration', true);
+const successDuration = new Trend('order_duration_success', true);   // 주문 성공한 요청만
+const soldOutDuration = new Trend('order_duration_sold_out', true);  // 품절 안내 받은 요청만
 // 주문 구간의 시작·끝 시각. setup(회원가입) 시간을 빼고 순수 주문 구간 TPS를 계산하는 데 쓴다.
 const orderStartTs = new Trend('order_start_ts');
 const orderEndTs = new Trend('order_end_ts');
@@ -110,8 +112,13 @@ export default function (data) {
     orderEndTs.add(Date.now());
     orderDuration.add(res.timings.duration);
 
-    if (res.status === 201) orderSuccess.add(1);
-    else if (res.status === 409 && res.json('code') === 'OUT_OF_STOCK') orderSoldOut.add(1);
+    if (res.status === 201) {
+        orderSuccess.add(1);
+        successDuration.add(res.timings.duration);
+    } else if (res.status === 409 && res.json('code') === 'OUT_OF_STOCK') {
+        orderSoldOut.add(1);
+        soldOutDuration.add(res.timings.duration);
+    }
     else orderError.add(1, { status: String(res.status) });
 
     check(res, { '201 또는 409(품절)': (r) => r.status === 201 || r.status === 409 });
@@ -139,6 +146,8 @@ export function handleSummary(data) {
         windowSec: windowMs / 1000, tps,
         avg: v('order_duration', 'avg'), p50: v('order_duration', 'med'), p95: v('order_duration', 'p(95)'),
         p99: v('order_duration', 'p(99)'), max: v('order_duration', 'max'),
+        successP50: v('order_duration_success', 'med'), successP95: v('order_duration_success', 'p(95)'),
+        soldOutP50: v('order_duration_sold_out', 'med'), soldOutP95: v('order_duration_sold_out', 'p(95)'),
     };
 
     const md = [
@@ -152,6 +161,8 @@ export function handleSummary(data) {
         `| 처리량 | **${tps.toFixed(1)} 건/초** |`,
         `| 응답 시간 평균 / p50 | ${ms(result.avg)} / ${ms(result.p50)} |`,
         `| 응답 시간 p95 / p99 / max | ${ms(result.p95)} / ${ms(result.p99)} / ${ms(result.max)} |`,
+        `| 성공 요청 p50 / p95 | ${ms(result.successP50)} / ${ms(result.successP95)} |`,
+        `| 품절 요청 p50 / p95 | ${ms(result.soldOutP50)} / ${ms(result.soldOutP95)} |`,
         '',
     ].join('\n');
 

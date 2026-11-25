@@ -3,6 +3,10 @@ spring:
     name: eventcart
   profiles:
     default: local
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
   jpa:
     open-in-view: false
     properties:
@@ -15,6 +19,8 @@ app:
     # 운영에서는 반드시 환경변수 JWT_SECRET로 교체 (Base64, 32바이트 이상)
     secret: ${JWT_SECRET:ZXZlbnRjYXJ0LWxvY2FsLWRldi1zZWNyZXQta2V5LWNoYW5nZS1tZQ==}
     access-token-validity: 1h
+  stock-gate:
+    key-prefix: eventcart
   admin:
     # 비어 있으면 관리자 계정을 만들지 않는다
     email: ${ADMIN_EMAIL:}
@@ -51,6 +57,9 @@ spring:
     hibernate:
       ddl-auto: create
 app:
+  stock-gate:
+    # DB를 매번 새로 만드므로 이전 실행의 Redis 키와 겹치지 않게
+    key-prefix: eventcart-h2-${random.uuid}
   admin:
     email: ${ADMIN_EMAIL:admin@eventcart.dev}
     password: ${ADMIN_PASSWORD:admin1234!}
