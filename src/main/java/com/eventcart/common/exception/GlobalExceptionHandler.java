@@ -40,8 +40,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<ErrorResponse> handleMissingHeader(MissingRequestHeaderException e) {
-        ErrorCode code = ErrorCode.MISSING_MEMBER_HEADER;
-        return ResponseEntity.status(code.getStatus()).body(ErrorResponse.of(code, code.getMessage()));
+        return badRequest(e.getHeaderName() + " 헤더가 필요합니다.");
     }
 
     @ExceptionHandler(Exception.class)

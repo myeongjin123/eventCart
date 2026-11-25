@@ -10,3 +10,11 @@ spring:
     properties:
       hibernate:
         default_batch_fetch_size: 100
+
+app:
+  jwt:
+    secret: dGVzdC1vbmx5LWV2ZW50Y2FydC1qd3Qtc2VjcmV0LWtleS0xMjM0NTY3ODkw
+    access-token-validity: 1h
+  admin:
+    email: admin@test.com
+    password: admin1234!
