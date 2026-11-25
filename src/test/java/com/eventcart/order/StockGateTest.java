@@ -8,15 +8,13 @@ import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.order.dto.OrderDto;
 import com.eventcart.order.service.OrderFacade;
 import com.eventcart.order.stock.StockGate;
+import com.eventcart.support.IntegrationTest;
 import com.eventcart.support.TestFixture;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 
 /** Redis 재고 게이트와 DB가 어긋나지 않는지 (예약 → 실패 시 반납, 취소 시 반납) */
-@SpringBootTest
-@Import(TestFixture.class)
+@IntegrationTest
 class StockGateTest {
 
     @Autowired

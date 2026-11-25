@@ -8,22 +8,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.eventcart.auth.jwt.JwtTokenProvider;
 import com.eventcart.member.domain.Role;
+import com.eventcart.support.IntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 /** 실제 HTTP 요청처럼 필터 체인을 통과시켜 인증·인가 규칙을 검증한다. */
-@SpringBootTest
-@AutoConfigureMockMvc
+@IntegrationTest
 class AuthApiTest {
 
     private static final String ADMIN_EMAIL = "admin@test.com";   // src/test/resources/application.yml
