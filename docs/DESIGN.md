@@ -32,16 +32,19 @@
 | F-04 | 이벤트 조회 | 진행 중 이벤트 목록, 이벤트 상품별 남은 수량 |
 | F-05 | 장바구니 | 이벤트 상품 담기/수량 변경/삭제/조회. **담기만으로 재고를 점유하지 않음** |
 | F-06 | 주문 | 장바구니 전체 주문 또는 바로 구매. 주문 시점에 재고 차감 (선착순) |
-| F-07 | 주문 취소 | 취소 시 재고 복구 |
+| F-07 | 주문 취소 | 취소 시 재고 복구, 결제 완료 주문은 환불 |
+| F-09 | 결제 | 주문 후 결제 기한(10분) 안에 결제. 모의 PG 연동, 거절 시 재시도 가능 |
+| F-10 | 미결제 자동 만료 | 결제 기한이 지난 주문은 스케줄러가 만료시키고 재고 반납 |
 | F-08 | 주문 조회 | 내 주문 목록/상세 |
 
 ### 비즈니스 규칙
 
 1. 이벤트 기간 밖에서는 장바구니 담기·주문 불가
 2. 재고(`remaining_quantity`)는 0 미만이 될 수 없다
-3. 회원별 누적 구매 수량(취소 제외)은 `per_member_limit`을 넘을 수 없다
+3. 회원별 누적 구매 수량(결제 대기·결제 완료 주문만)은 `per_member_limit`을 넘을 수 없다
 4. 장바구니 주문은 **전부 성공 또는 전부 실패** (한 트랜잭션)
 5. 주문 성공 시 해당 장바구니 항목 삭제
+6. 주문 시점에 재고를 차감하고, 결제 기한 안에 결제하지 않으면 만료되어 재고가 돌아온다
 
 ### 비기능 요구사항
 
@@ -59,6 +62,7 @@ erDiagram
     EVENT_PRODUCT ||--o{ CART_ITEM : "added as"
     EVENT_PRODUCT ||--o{ ORDER_ITEM : "sold as"
     ORDERS ||--|{ ORDER_ITEM : contains
+    ORDERS ||--o{ PAYMENT : "paid by"
 
     MEMBER { bigint id PK
              varchar email UK
@@ -87,7 +91,14 @@ erDiagram
              bigint member_id FK
              varchar status
              int total_price
-             datetime ordered_at }
+             datetime ordered_at
+             datetime payment_deadline }
+    PAYMENT { bigint id PK
+              bigint order_id FK
+              int amount
+              varchar method
+              varchar status
+              varchar transaction_id }
     ORDER_ITEM { bigint id PK
                  bigint order_id FK
                  bigint event_product_id FK
@@ -121,7 +132,8 @@ erDiagram
 | POST | `/api/orders` | 바로 구매 `{eventProductId, quantity}` |
 | GET | `/api/orders` | 내 주문 목록 |
 | GET | `/api/orders/{orderId}` | 주문 상세 |
-| POST | `/api/orders/{orderId}/cancel` | 주문 취소 |
+| POST | `/api/orders/{orderId}/payment` | 결제 `{method}` (모의 PG: `DECLINED_CARD`면 거절) |
+| POST | `/api/orders/{orderId}/cancel` | 주문 취소 (결제 완료면 환불) |
 
 에러 응답 예:
 
@@ -136,13 +148,30 @@ erDiagram
 | `PURCHASE_LIMIT_EXCEEDED` | 409 | 1인 구매 제한 초과 |
 | `EVENT_NOT_ONGOING` | 400 | 이벤트 기간 아님 |
 | `CART_EMPTY` | 400 | 빈 장바구니 주문 |
-| `INVALID_ORDER_STATUS` | 400 | 취소 불가 상태 |
+| `INVALID_ORDER_STATUS` | 400 | 현재 상태에서 불가 (이미 결제·만료·취소) |
+| `PAYMENT_EXPIRED` | 400 | 결제 기한 지남 |
 | `INVALID_INPUT` | 400 | 검증 실패 |
 | `UNAUTHORIZED` | 401 | 토큰 없음·위조·만료 |
 | `INVALID_CREDENTIALS` | 401 | 이메일 또는 비밀번호 불일치 |
 | `FORBIDDEN` | 403 | 권한 부족 (관리자 전용 API) |
 
-## 6. 동시성 전략
+## 6. 주문·결제 상태
+
+```
+PENDING_PAYMENT ──결제 승인──▶ PAID ──취소(환불)──▶ CANCELED
+      ├──────────취소───────────────────────────▶ CANCELED
+      └──결제 기한 지남 (스케줄러, 30초마다)──▶ EXPIRED
+```
+
+- 재고는 주문 시점에 차감한다(선착순). CANCELED·EXPIRED가 되면 DB와 Redis 재고를 돌려준다.
+- 결제·취소·만료는 모두 **주문 행을 먼저 잠그고 상태를 다시 확인**한다. 결제와 만료가 동시에 와도 한쪽만 반영된다 (`PaymentFlowTest`에서 10회 반복 검증).
+- 결제 거절은 예외가 아니다. `FAILED` 결제 기록을 남기고 주문은 결제 대기로 둔다.
+- PG는 `PaymentGateway` 인터페이스 뒤에 숨긴다. 지금은 `FakePaymentGateway`.
+- 한계와 다음 단계
+  - 모의 PG라 주문 락을 쥔 채 PG를 호출한다. 실제 PG(수 초 소요)는 `PAYING` 상태로 먼저 커밋하고 트랜잭션 밖에서 호출, 결과를 웹훅·조회로 확정해야 한다.
+  - 서버가 여러 대면 스케줄러가 모두 돈다(중복 처리는 락으로 막힘). ShedLock으로 한 대만 돌게 하는 것이 좋다.
+
+## 7. 동시성 전략
 
 ### 1단계 (현재 구현): DB 비관적 락
 
@@ -190,7 +219,7 @@ OrderFacade (트랜잭션 없음)
 - 반납은 트랜잭션이 끝난 뒤(롤백 포함)에 한다. 롤백 전에 반납하면 그 재고를 다른 요청이 먼저 예약할 수 있다.
 - 남은 과제: Redis와 DB 재고를 주기적으로 맞추는 대사(reconciliation) 작업, 반납 실패 재시도.
 
-## 7. 패키지 구조
+## 8. 패키지 구조
 
 ```
 com.eventcart
@@ -200,12 +229,13 @@ com.eventcart
  ├─ product
  ├─ event       (Event, EventProduct)
  ├─ cart
- └─ order       (Order, OrderItem, OrderService ← 동시성 핵심, OrderFacade, stock/StockGate ← Redis)
+ ├─ order       (Order, OrderItem, OrderService ← 동시성 핵심, OrderFacade, stock/StockGate ← Redis, 만료 스케줄러)
+ └─ payment     (Payment, PaymentService, gateway/PaymentGateway ← 모의 PG)
 ```
 
 도메인별 패키지 안에 `controller / service / repository / domain / dto`를 둔다.
 
-## 8. 로드맵
+## 9. 로드맵
 
 | 단계 | 내용 | 산출물 |
 |---|---|---|
@@ -214,5 +244,5 @@ com.eventcart
 | 3 (완료) | k6 부하 테스트로 비관적 락 기준치 측정 (hot vs spread) | [LOAD_TEST.md](LOAD_TEST.md) |
 | 4 (완료) | Redis 재고 게이트 (Lua 원자 예약 + 실패 시 반납) | [LOAD_TEST.md](LOAD_TEST.md) 전후 비교 |
 | 5 (완료) | Testcontainers(MySQL·Redis), GitHub Actions CI | 통합 테스트가 실제 MySQL 8·Redis에서 실행 |
-| 6 | 결제 모의 연동 + 미결제 주문 자동 취소(스케줄러) | 주문 상태 머신 |
+| 6 (완료) | 결제 모의 연동 + 미결제 주문 자동 만료(스케줄러) | 주문 상태 머신, PaymentFlowTest |
 | 7 | Docker 배포 (AWS/NCP), 모니터링 (Actuator + Prometheus/Grafana) | 운영 경험 |
