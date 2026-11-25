@@ -29,6 +29,13 @@ class StockGateTest {
     private TestFixture fixture;
 
     @Test
+    void 이벤트_상품을_등록하면_게이트가_미리_채워진다() {
+        Long ep = fixture.ongoingEventProduct(7, 2);
+
+        assertThat(stockGate.remaining(ep)).isEqualTo(7);
+    }
+
+    @Test
     void 주문하면_Redis와_DB_재고가_같이_줄어든다() {
         Long member = fixture.member();
         Long ep = fixture.ongoingEventProduct(10, 3);
@@ -84,7 +91,7 @@ class StockGateTest {
     void Redis가_비워져도_DB_값으로_다시_초기화한다() {
         Long buyer = fixture.member();
         Long ep = fixture.ongoingEventProduct(5, 2);
-        assertThat(stockGate.remaining(ep)).isNull(); // 아직 아무도 주문 안 함 = 키 없음
+        assertThat(stockGate.remaining(ep)).isEqualTo(5); // 등록하자마자 미리 채워짐
 
         orderFacade.orderDirect(buyer, new OrderDto.DirectRequest(ep, 2));
         stockGate.evict(ep); // Redis 재시작으로 키가 사라진 상황

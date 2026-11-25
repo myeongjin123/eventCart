@@ -4,6 +4,7 @@ import com.eventcart.common.exception.BusinessException;
 import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.event.domain.Event;
 import com.eventcart.event.domain.EventProduct;
+import com.eventcart.event.domain.EventProductRegistered;
 import com.eventcart.event.dto.EventDto;
 import com.eventcart.event.repository.EventProductRepository;
 import com.eventcart.event.repository.EventRepository;
@@ -13,6 +14,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ public class EventService {
     private final EventProductRepository eventProductRepository;
     private final ProductService productService;
     private final Clock clock;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public EventDto.Response create(EventDto.CreateRequest request) {
@@ -39,6 +42,7 @@ public class EventService {
         Product product = productService.getProduct(request.productId());
         EventProduct eventProduct = eventProductRepository.save(new EventProduct(
                 event, product, request.eventPrice(), request.totalQuantity(), request.perMemberLimit()));
+        eventPublisher.publishEvent(new EventProductRegistered(eventProduct.getId()));
         return EventDto.EventProductResponse.from(eventProduct);
     }
 
