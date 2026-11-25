@@ -1,0 +1,193 @@
+# EventCart 설계 문서
+
+> 선착순 한정 수량 이벤트 쇼핑몰 — Java/Spring 백엔드 포트폴리오용 사이드 프로젝트
+
+## 1. 프로젝트 목표
+
+- **핵심 주제: 동시성 하에서의 재고 정합성.** 수백 명이 동시에 주문해도 재고가 음수가 되거나 1인 구매 제한을 넘지 않도록 보장한다.
+- SI 실무에서 익숙한 계층형 구조(Controller → Service → Repository)를 유지하면서, 도메인 모델·트랜잭션·락 전략·테스트를 단계적으로 고도화한다.
+- 단계별로 "문제 → 해결 → 측정" 기록을 남겨 블로그/면접 자료로 쓴다.
+
+## 2. 기술 스택
+
+| 구분 | 선택 | 비고 |
+|---|---|---|
+| Language | Java 21 | record, switch 패턴 등 |
+| Framework | Spring Boot 3.5 | Web, Data JPA, Validation |
+| DB | MySQL 8 (로컬: docker compose) | 테스트는 H2 (MySQL 모드) |
+| Build | Gradle (Groovy DSL) | |
+| Test | JUnit 5, AssertJ, SpringBootTest | 동시성 테스트 포함 |
+| 이후 단계 | Redis, k6, Testcontainers | 로드맵 참고 |
+
+## 3. 요구사항
+
+### 기능 요구사항
+
+| ID | 기능 | 설명 |
+|---|---|---|
+| F-01 | 회원 등록 | 이메일·이름으로 회원 생성 (인증은 2단계에서 도입, 1단계는 `X-Member-Id` 헤더) |
+| F-02 | 상품 관리 | 상품 등록·조회 (정가) |
+| F-03 | 이벤트 관리 | 기간(시작~종료)이 있는 이벤트 생성, 이벤트에 상품을 이벤트가·한정 수량·1인 구매 제한과 함께 등록 |
+| F-04 | 이벤트 조회 | 진행 중 이벤트 목록, 이벤트 상품별 남은 수량 |
+| F-05 | 장바구니 | 이벤트 상품 담기/수량 변경/삭제/조회. **담기만으로 재고를 점유하지 않음** |
+| F-06 | 주문 | 장바구니 전체 주문 또는 바로 구매. 주문 시점에 재고 차감 (선착순) |
+| F-07 | 주문 취소 | 취소 시 재고 복구 |
+| F-08 | 주문 조회 | 내 주문 목록/상세 |
+
+### 비즈니스 규칙
+
+1. 이벤트 기간 밖에서는 장바구니 담기·주문 불가
+2. 재고(`remaining_quantity`)는 0 미만이 될 수 없다
+3. 회원별 누적 구매 수량(취소 제외)은 `per_member_limit`을 넘을 수 없다
+4. 장바구니 주문은 **전부 성공 또는 전부 실패** (한 트랜잭션)
+5. 주문 성공 시 해당 장바구니 항목 삭제
+
+### 비기능 요구사항
+
+- 동시 주문 100건 이상에서 초과 판매 0건 (테스트로 증명)
+- 일관된 에러 응답 포맷 (`code`, `message`)
+
+## 4. ERD
+
+```mermaid
+erDiagram
+    MEMBER ||--o{ CART_ITEM : has
+    MEMBER ||--o{ ORDERS : places
+    PRODUCT ||--o{ EVENT_PRODUCT : "listed in"
+    EVENT ||--o{ EVENT_PRODUCT : contains
+    EVENT_PRODUCT ||--o{ CART_ITEM : "added as"
+    EVENT_PRODUCT ||--o{ ORDER_ITEM : "sold as"
+    ORDERS ||--|{ ORDER_ITEM : contains
+
+    MEMBER { bigint id PK
+             varchar email UK
+             varchar name }
+    PRODUCT { bigint id PK
+              varchar name
+              int price }
+    EVENT { bigint id PK
+            varchar name
+            datetime start_at
+            datetime end_at }
+    EVENT_PRODUCT { bigint id PK
+                    bigint event_id FK
+                    bigint product_id FK
+                    int event_price
+                    int total_quantity
+                    int remaining_quantity
+                    int per_member_limit }
+    CART_ITEM { bigint id PK
+                bigint member_id FK
+                bigint event_product_id FK
+                int quantity }
+    ORDERS { bigint id PK
+             bigint member_id FK
+             varchar status
+             int total_price
+             datetime ordered_at }
+    ORDER_ITEM { bigint id PK
+                 bigint order_id FK
+                 bigint event_product_id FK
+                 int quantity
+                 int unit_price }
+```
+
+- `cart_item (member_id, event_product_id)` 유니크 — 같은 상품을 다시 담으면 수량 합산
+- 모든 테이블에 `created_at`, `updated_at` (JPA Auditing)
+- 주문 테이블명은 예약어 회피를 위해 `orders`
+
+## 5. API 설계
+
+공통: `Content-Type: application/json`, 회원 식별은 `X-Member-Id` 헤더 (1단계)
+
+| Method | URI | 설명 |
+|---|---|---|
+| POST | `/api/members` | 회원 등록 |
+| POST | `/api/products` | 상품 등록 |
+| GET | `/api/products/{id}` | 상품 조회 |
+| POST | `/api/events` | 이벤트 생성 |
+| POST | `/api/events/{eventId}/products` | 이벤트에 상품 등록 |
+| GET | `/api/events/ongoing` | 진행 중 이벤트 목록 (상품·남은 수량 포함) |
+| GET | `/api/events/{eventId}` | 이벤트 상세 |
+| GET | `/api/cart` | 내 장바구니 |
+| POST | `/api/cart/items` | 담기 `{eventProductId, quantity}` |
+| PATCH | `/api/cart/items/{cartItemId}` | 수량 변경 `{quantity}` |
+| DELETE | `/api/cart/items/{cartItemId}` | 삭제 |
+| POST | `/api/orders/checkout` | 장바구니 전체 주문 |
+| POST | `/api/orders` | 바로 구매 `{eventProductId, quantity}` |
+| GET | `/api/orders` | 내 주문 목록 |
+| GET | `/api/orders/{orderId}` | 주문 상세 |
+| POST | `/api/orders/{orderId}/cancel` | 주문 취소 |
+
+에러 응답 예:
+
+```json
+{ "code": "OUT_OF_STOCK", "message": "재고가 부족합니다." }
+```
+
+| code | HTTP | 의미 |
+|---|---|---|
+| `MEMBER_NOT_FOUND` 등 `*_NOT_FOUND` | 404 | 리소스 없음 |
+| `OUT_OF_STOCK` | 409 | 재고 부족 |
+| `PURCHASE_LIMIT_EXCEEDED` | 409 | 1인 구매 제한 초과 |
+| `EVENT_NOT_ONGOING` | 400 | 이벤트 기간 아님 |
+| `CART_EMPTY` | 400 | 빈 장바구니 주문 |
+| `INVALID_ORDER_STATUS` | 400 | 취소 불가 상태 |
+| `INVALID_INPUT` | 400 | 검증 실패 |
+
+## 6. 동시성 전략
+
+### 1단계 (현재 구현): DB 비관적 락
+
+```
+주문 트랜잭션 시작
+  └─ SELECT ... FROM event_product WHERE id IN (...) ORDER BY id FOR UPDATE
+  └─ 회원 누적 구매 수량 조회 → 1인 제한 검증
+  └─ 남은 수량 검증 → 차감 (dirty checking)
+  └─ 주문/주문상품 저장, 장바구니 삭제
+커밋 (락 해제)
+```
+
+- 재고 검증과 1인 제한 검증을 **같은 락 안에서** 처리해야 두 규칙 모두 지켜진다. (재고만 원자적 UPDATE로 막으면 같은 회원의 동시 요청이 1인 제한을 뚫을 수 있음)
+- 여러 상품을 한 번에 주문할 때 **id 오름차순으로 락**을 잡아 데드락을 피한다.
+- 주문 트랜잭션은 **READ_COMMITTED**. MySQL 기본값 REPEATABLE_READ에서는 락을 기다린 뒤 실행하는 일반 SELECT(누적 구매 수량)가 트랜잭션 초기 스냅샷을 읽어 1인 제한이 뚫릴 수 있다.
+- 락 조회 전에 `EventProduct`를 영속성 컨텍스트에 올리지 않는다(장바구니는 id·수량만 projection 조회). 이미 로딩된 엔티티는 `FOR UPDATE` 조회 후에도 1차 캐시의 오래된 값이 남는다.
+- `event`를 join fetch하지 않는다. 조인하면 이벤트 행까지 잠겨 같은 이벤트의 모든 주문이 직렬화된다.
+- 주문 취소는 주문 행도 잠가 중복 취소로 재고가 두 번 복구되는 것을 막는다.
+- 장점: 단순, 정확. 단점: 인기 상품 한 행에 요청이 몰리면 대기 → 처리량 한계.
+
+### 이후 비교 대상
+
+| 방식 | 내용 | 기록할 것 |
+|---|---|---|
+| 낙관적 락 (`@Version`) | 충돌 시 재시도 | 충돌률 높을 때 성능 저하 |
+| 원자적 UPDATE | `UPDATE ... SET remaining = remaining - ? WHERE remaining >= ?` | 1인 제한은 별도 처리 필요 |
+| Redis `DECR` / Lua | DB 앞단에서 재고 선차감 | DB-Redis 정합성, 보상 처리 |
+| Redisson 분산 락 | 다중 인스턴스 | 락 획득 대기 시간 |
+| 대기열 (Redis Sorted Set) | 트래픽 제어 | 사용자 경험 |
+
+## 7. 패키지 구조
+
+```
+com.eventcart
+ ├─ common      (BaseTimeEntity, 예외·에러코드, 전역 예외 처리)
+ ├─ member
+ ├─ product
+ ├─ event       (Event, EventProduct)
+ ├─ cart
+ └─ order       (Order, OrderItem, OrderService ← 동시성 핵심)
+```
+
+도메인별 패키지 안에 `controller / service / repository / domain / dto`를 둔다.
+
+## 8. 로드맵
+
+| 단계 | 내용 | 산출물 |
+|---|---|---|
+| **1 (완료)** | 도메인·API·비관적 락 주문, 동시성 테스트 | 초기 코드, 본 문서 |
+| 2 | Spring Security + JWT, 관리자/사용자 권한 분리 | `X-Member-Id` 제거 |
+| 3 | k6 부하 테스트로 락 전략별 TPS·지연 측정 | 비교표, 블로그 글 |
+| 4 | Redis 재고 선차감 + 대기열 | 성능 개선 수치 |
+| 5 | Testcontainers(MySQL·Redis), GitHub Actions CI | 배지, 자동 테스트 |
+| 6 | 결제 모의 연동 + 미결제 주문 자동 취소(스케줄러) | 주문 상태 머신 |
+| 7 | Docker 배포 (AWS/NCP), 모니터링 (Actuator + Prometheus/Grafana) | 운영 경험 |

@@ -1,0 +1,20 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: eventcart-mysql
+    environment:
+      MYSQL_DATABASE: eventcart
+      MYSQL_USER: eventcart
+      MYSQL_PASSWORD: eventcart
+      MYSQL_ROOT_PASSWORD: root
+      TZ: Asia/Seoul
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - eventcart-mysql-data:/var/lib/mysql
+
+volumes:
+  eventcart-mysql-data:
