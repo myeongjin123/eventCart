@@ -22,7 +22,7 @@ public class TestFixture {
 
     public Long member() {
         String email = UUID.randomUUID() + "@test.com";
-        return memberService.create(new MemberDto.CreateRequest(email, "tester")).id();
+        return memberService.create(new MemberDto.CreateRequest(email, "tester", "password123")).id();
     }
 
     /** 진행 중인 이벤트에 상품을 등록하고 eventProductId를 반환한다. */

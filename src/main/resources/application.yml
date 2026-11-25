@@ -10,6 +10,16 @@ spring:
         default_batch_fetch_size: 100
         format_sql: true
 
+app:
+  jwt:
+    # 운영에서는 반드시 환경변수 JWT_SECRET로 교체 (Base64, 32바이트 이상)
+    secret: ${JWT_SECRET:ZXZlbnRjYXJ0LWxvY2FsLWRldi1zZWNyZXQta2V5LWNoYW5nZS1tZQ==}
+    access-token-validity: 1h
+  admin:
+    # 비어 있으면 관리자 계정을 만들지 않는다
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
+
 ---
 spring:
   config:
@@ -23,6 +33,10 @@ spring:
     hibernate:
       ddl-auto: update
     show-sql: true
+app:
+  admin:
+    email: ${ADMIN_EMAIL:admin@eventcart.dev}
+    password: ${ADMIN_PASSWORD:admin1234!}
 
 ---
 spring:
@@ -33,9 +47,10 @@ spring:
     url: jdbc:h2:mem:eventcart;MODE=MySQL;DATABASE_TO_LOWER=TRUE
     username: sa
     password:
-  h2:
-    console:
-      enabled: true
   jpa:
     hibernate:
       ddl-auto: create
+app:
+  admin:
+    email: ${ADMIN_EMAIL:admin@eventcart.dev}
+    password: ${ADMIN_PASSWORD:admin1234!}
