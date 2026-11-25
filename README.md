@@ -74,6 +74,17 @@ curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
 - 재고 10개 / 100명 동시 주문 → 성공 10, `OUT_OF_STOCK` 90, 잔여 0
 - 1인 제한 2개 / 같은 회원 20회 동시 주문 → 성공 2, `PURCHASE_LIMIT_EXCEEDED` 18
 
+## 부하 테스트 (3단계)
+
+회원 500명 · VU 100 · 재고 100개 (GitHub Actions 2코어 러너)
+
+| 시나리오 | 처리량 | p95 | 초과 판매 |
+|---|---|---|---|
+| 인기 상품 1개 집중 | 약 110~126 건/초 | 약 1.5초 | 0 |
+| 상품 10개 분산 | 약 235~310 건/초 | 약 0.7~1.0초 | 0 |
+
+자세한 조건과 해석: [docs/LOAD_TEST.md](docs/LOAD_TEST.md)
+
 ## 다음 단계
 
-로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **3단계: k6 부하 테스트**로 락 전략별 처리량 측정.
+로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **4단계: Redis 재고 선차감**으로 품절 요청을 DB 락 없이 빠르게 거절.
