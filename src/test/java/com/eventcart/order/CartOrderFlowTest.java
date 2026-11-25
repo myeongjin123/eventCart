@@ -66,7 +66,10 @@ class CartOrderFlowTest {
         cartService.add(member, new CartDto.AddRequest(enough, 2));
         cartService.add(member, new CartDto.AddRequest(scarce, 2));
 
-        assertErrorCode(() -> orderService.checkout(member), ErrorCode.OUT_OF_STOCK);
+        assertThatThrownBy(() -> orderService.checkout(member))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.OUT_OF_STOCK))
+                .hasMessageContaining("재고가 부족합니다. (남은 수량: 1개)");
 
         assertThat(fixture.remaining(enough)).isEqualTo(10);
         assertThat(fixture.remaining(scarce)).isEqualTo(1);

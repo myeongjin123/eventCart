@@ -73,10 +73,13 @@ public class EventProduct extends BaseTimeEntity {
      */
     public void purchase(int quantity, int alreadyPurchased) {
         if (alreadyPurchased + quantity > perMemberLimit) {
-            throw new BusinessException(ErrorCode.PURCHASE_LIMIT_EXCEEDED);
+            throw new BusinessException(ErrorCode.PURCHASE_LIMIT_EXCEEDED,
+                    "%s은(는) 1인당 %d개까지 구매할 수 있습니다. (이미 구매: %d개)"
+                            .formatted(product.getName(), perMemberLimit, alreadyPurchased));
         }
         if (remainingQuantity < quantity) {
-            throw new BusinessException(ErrorCode.OUT_OF_STOCK);
+            throw new BusinessException(ErrorCode.OUT_OF_STOCK,
+                    "%s 재고가 부족합니다. (남은 수량: %d개)".formatted(product.getName(), remainingQuantity));
         }
         remainingQuantity -= quantity;
     }

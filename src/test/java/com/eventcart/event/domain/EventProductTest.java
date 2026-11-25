@@ -33,7 +33,8 @@ class EventProductTest {
 
         assertThatThrownBy(() -> ep.purchase(2, 0))
                 .isInstanceOfSatisfying(BusinessException.class,
-                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.OUT_OF_STOCK));
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.OUT_OF_STOCK))
+                .hasMessage("에어팟 재고가 부족합니다. (남은 수량: 1개)");
         assertThat(ep.getRemainingQuantity()).isEqualTo(1);
     }
 
@@ -43,7 +44,8 @@ class EventProductTest {
 
         assertThatThrownBy(() -> ep.purchase(1, 2))
                 .isInstanceOfSatisfying(BusinessException.class,
-                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PURCHASE_LIMIT_EXCEEDED));
+                        e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.PURCHASE_LIMIT_EXCEEDED))
+                .hasMessage("에어팟은(는) 1인당 2개까지 구매할 수 있습니다. (이미 구매: 2개)");
     }
 
     @Test
