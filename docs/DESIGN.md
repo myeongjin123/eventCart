@@ -25,7 +25,7 @@
 
 | ID | 기능 | 설명 |
 |---|---|---|
-| F-01 | 회원 등록 | 이메일·이름으로 회원 생성 (인증은 2단계에서 도입, 1단계는 `X-Member-Id` 헤더) |
+| F-01 | 회원 등록·로그인 | 이메일·이름·비밀번호로 가입(USER), 로그인 시 JWT 발급. 관리자는 설정값으로 생성 |
 | F-02 | 상품 관리 | 상품 등록·조회 (정가) |
 | F-03 | 이벤트 관리 | 기간(시작~종료)이 있는 이벤트 생성, 이벤트에 상품을 이벤트가·한정 수량·1인 구매 제한과 함께 등록 |
 | F-04 | 이벤트 조회 | 진행 중 이벤트 목록, 이벤트 상품별 남은 수량 |
@@ -61,7 +61,9 @@ erDiagram
 
     MEMBER { bigint id PK
              varchar email UK
-             varchar name }
+             varchar name
+             varchar password
+             varchar role }
     PRODUCT { bigint id PK
               varchar name
               int price }
@@ -98,11 +100,12 @@ erDiagram
 
 ## 5. API 설계
 
-공통: `Content-Type: application/json`, 회원 식별은 `X-Member-Id` 헤더 (1단계)
+공통: `Content-Type: application/json`, 회원 식별은 `Authorization: Bearer <JWT>` (2단계)
 
 | Method | URI | 설명 |
 |---|---|---|
-| POST | `/api/members` | 회원 등록 |
+| POST | `/api/members` | 회원가입 |
+| POST | `/api/auth/login` | 로그인 → 액세스 토큰 |
 | POST | `/api/products` | 상품 등록 |
 | GET | `/api/products/{id}` | 상품 조회 |
 | POST | `/api/events` | 이벤트 생성 |
@@ -134,6 +137,9 @@ erDiagram
 | `CART_EMPTY` | 400 | 빈 장바구니 주문 |
 | `INVALID_ORDER_STATUS` | 400 | 취소 불가 상태 |
 | `INVALID_INPUT` | 400 | 검증 실패 |
+| `UNAUTHORIZED` | 401 | 토큰 없음·위조·만료 |
+| `INVALID_CREDENTIALS` | 401 | 이메일 또는 비밀번호 불일치 |
+| `FORBIDDEN` | 403 | 권한 부족 (관리자 전용 API) |
 
 ## 6. 동시성 전략
 
@@ -171,6 +177,7 @@ erDiagram
 ```
 com.eventcart
  ├─ common      (BaseTimeEntity, 예외·에러코드, 전역 예외 처리)
+ ├─ auth        (SecurityConfig, JWT 발급·검증 필터, 로그인, 관리자 초기화)
  ├─ member
  ├─ product
  ├─ event       (Event, EventProduct)
@@ -184,8 +191,8 @@ com.eventcart
 
 | 단계 | 내용 | 산출물 |
 |---|---|---|
-| **1 (완료)** | 도메인·API·비관적 락 주문, 동시성 테스트 | 초기 코드, 본 문서 |
-| 2 | Spring Security + JWT, 관리자/사용자 권한 분리 | `X-Member-Id` 제거 |
+| 1 (완료) | 도메인·API·비관적 락 주문, 동시성 테스트 | 초기 코드, 본 문서 |
+| 2 (완료) | Spring Security + JWT, 관리자/사용자 권한 분리 | `X-Member-Id` 제거, AuthApiTest |
 | 3 | k6 부하 테스트로 락 전략별 TPS·지연 측정 | 비교표, 블로그 글 |
 | 4 | Redis 재고 선차감 + 대기열 | 성능 개선 수치 |
 | 5 | Testcontainers(MySQL·Redis), GitHub Actions CI | 배지, 자동 테스트 |
