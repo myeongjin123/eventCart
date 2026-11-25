@@ -13,11 +13,12 @@
 | 구분 | 선택 | 비고 |
 |---|---|---|
 | Language | Java 21 | record, switch 패턴 등 |
-| Framework | Spring Boot 3.5 | Web, Data JPA, Validation |
-| DB | MySQL 8 (로컬: docker compose) | 테스트는 H2 (MySQL 모드) |
+| Framework | Spring Boot 3.5.8 | Web, Data JPA, Validation, Security, Data Redis |
+| DB | MySQL 8 (로컬: docker compose) | 테스트도 MySQL 8 (Testcontainers) |
+| Cache | Redis 7 | 재고 게이트 (4단계) |
 | Build | Gradle (Groovy DSL) | |
-| Test | JUnit 5, AssertJ, SpringBootTest | 동시성 테스트 포함 |
-| 이후 단계 | Redis, k6, Testcontainers | 로드맵 참고 |
+| Test | JUnit 5, AssertJ, SpringBootTest, Testcontainers | 동시성 테스트, 실제 MySQL·Redis |
+| 부하 테스트 | k6 + GitHub Actions | [LOAD_TEST.md](LOAD_TEST.md) |
 
 ## 3. 요구사항
 
@@ -212,6 +213,6 @@ com.eventcart
 | 2 (완료) | Spring Security + JWT, 관리자/사용자 권한 분리 | `X-Member-Id` 제거, AuthApiTest |
 | 3 (완료) | k6 부하 테스트로 비관적 락 기준치 측정 (hot vs spread) | [LOAD_TEST.md](LOAD_TEST.md) |
 | 4 (완료) | Redis 재고 게이트 (Lua 원자 예약 + 실패 시 반납) | [LOAD_TEST.md](LOAD_TEST.md) 전후 비교 |
-| 5 | Testcontainers(MySQL·Redis), GitHub Actions CI | 배지, 자동 테스트 |
+| 5 (완료) | Testcontainers(MySQL·Redis), GitHub Actions CI | 통합 테스트가 실제 MySQL 8·Redis에서 실행 |
 | 6 | 결제 모의 연동 + 미결제 주문 자동 취소(스케줄러) | 주문 상태 머신 |
 | 7 | Docker 배포 (AWS/NCP), 모니터링 (Actuator + Prometheus/Grafana) | 운영 경험 |

@@ -10,14 +10,12 @@ import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.order.domain.OrderStatus;
 import com.eventcart.order.dto.OrderDto;
 import com.eventcart.order.service.OrderFacade;
+import com.eventcart.support.IntegrationTest;
 import com.eventcart.support.TestFixture;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 
-@SpringBootTest
-@Import(TestFixture.class)
+@IntegrationTest
 class CartOrderFlowTest {
 
     @Autowired

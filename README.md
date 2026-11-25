@@ -4,14 +4,14 @@
 
 선착순 한정 수량 이벤트 쇼핑몰 백엔드. 동시 주문 상황에서 **초과 판매 0건, 1인 구매 제한 보장**을 목표로 한다.
 
-- Java 21 · Spring Boot 3.5 · Spring Data JPA · MySQL 8 · Gradle
+- Java 21 · Spring Boot 3.5 · Spring Data JPA · Spring Security(JWT) · MySQL 8 · Redis · Gradle
+- 테스트: JUnit 5 · Testcontainers(MySQL·Redis) · k6 부하 테스트 · GitHub Actions
 - 설계 문서: [docs/DESIGN.md](docs/DESIGN.md) (요구사항, ERD, API, 동시성 전략, 로드맵)
 
 ## 실행
 
 ```bash
-# 1) 테스트 (DB는 H2 인메모리, Redis는 로컬 6379 필요)
-docker compose up -d redis
+# 1) 테스트 (Docker만 켜져 있으면 됨: MySQL 8·Redis 컨테이너를 테스트가 직접 띄움)
 ./gradlew test
 
 # 2) MySQL로 실행
@@ -92,4 +92,4 @@ curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
 
 ## 다음 단계
 
-로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **5단계: Testcontainers**로 테스트가 실제 MySQL·Redis에서 돌게 하기.
+로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **6단계: 결제 모의 연동**과 미결제 주문 자동 취소.

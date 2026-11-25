@@ -1,8 +1,5 @@
+# DB·Redis 접속 정보는 Testcontainers(@ServiceConnection)가 채운다. → support/TestcontainersConfig
 spring:
-  datasource:
-    url: jdbc:h2:mem:eventcart-test;MODE=MySQL;DATABASE_TO_LOWER=TRUE;LOCK_TIMEOUT=10000
-    username: sa
-    password:
   jpa:
     open-in-view: false
     hibernate:
@@ -11,14 +8,9 @@ spring:
       hibernate:
         default_batch_fetch_size: 100
 
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-
 app:
   stock-gate:
-    # 테스트 컨텍스트마다 새 DB(create-drop)이므로 Redis 키도 매번 새로
+    # 테스트 실행마다 새 DB이므로 Redis 키도 매번 새로
     key-prefix: eventcart-test-${random.uuid}
   jwt:
     secret: dGVzdC1vbmx5LWV2ZW50Y2FydC1qd3Qtc2VjcmV0LWtleS0xMjM0NTY3ODkw
