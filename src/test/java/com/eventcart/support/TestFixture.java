@@ -35,6 +35,16 @@ public class TestFixture {
                 new EventDto.AddProductRequest(productId, 5_000, stock, perMemberLimit)).eventProductId();
     }
 
+    /** 이미 끝난 이벤트의 상품. Redis 게이트는 통과하지만 DB 검증(기간)에서 실패시키는 용도. */
+    public Long endedEventProduct(int stock, int perMemberLimit) {
+        LocalDateTime now = LocalDateTime.now();
+        Long eventId = eventService.create(
+                new EventDto.CreateRequest("끝난 이벤트", now.minusHours(2), now.minusHours(1))).id();
+        Long productId = productService.create(new ProductDto.CreateRequest("지난 상품", 10_000)).id();
+        return eventService.addProduct(eventId,
+                new EventDto.AddProductRequest(productId, 5_000, stock, perMemberLimit)).eventProductId();
+    }
+
     public int remaining(Long eventProductId) {
         return eventService.getEventProduct(eventProductId).getRemainingQuantity();
     }

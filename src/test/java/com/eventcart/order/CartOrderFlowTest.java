@@ -9,7 +9,7 @@ import com.eventcart.common.exception.BusinessException;
 import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.order.domain.OrderStatus;
 import com.eventcart.order.dto.OrderDto;
-import com.eventcart.order.service.OrderService;
+import com.eventcart.order.service.OrderFacade;
 import com.eventcart.support.TestFixture;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,7 +24,7 @@ class CartOrderFlowTest {
     private CartService cartService;
 
     @Autowired
-    private OrderService orderService;
+    private OrderFacade orderFacade;
 
     @Autowired
     private TestFixture fixture;
@@ -43,19 +43,19 @@ class CartOrderFlowTest {
         assertThat(cart.items()).hasSize(2);
         assertThat(cart.totalPrice()).isEqualTo(5_000 * 5);
 
-        OrderDto.Response order = orderService.checkout(member);
+        OrderDto.Response order = orderFacade.checkout(member);
         assertThat(order.status()).isEqualTo(OrderStatus.ORDERED);
         assertThat(order.totalPrice()).isEqualTo(25_000);
         assertThat(fixture.remaining(ep1)).isEqualTo(8);
         assertThat(fixture.remaining(ep2)).isEqualTo(7);
         assertThat(cartService.getCart(member).items()).isEmpty();
 
-        OrderDto.Response canceled = orderService.cancel(member, order.orderId());
+        OrderDto.Response canceled = orderFacade.cancel(member, order.orderId());
         assertThat(canceled.status()).isEqualTo(OrderStatus.CANCELED);
         assertThat(fixture.remaining(ep1)).isEqualTo(10);
         assertThat(fixture.remaining(ep2)).isEqualTo(10);
 
-        assertErrorCode(() -> orderService.cancel(member, order.orderId()), ErrorCode.INVALID_ORDER_STATUS);
+        assertErrorCode(() -> orderFacade.cancel(member, order.orderId()), ErrorCode.INVALID_ORDER_STATUS);
     }
 
     @Test
@@ -66,7 +66,7 @@ class CartOrderFlowTest {
         cartService.add(member, new CartDto.AddRequest(enough, 2));
         cartService.add(member, new CartDto.AddRequest(scarce, 2));
 
-        assertThatThrownBy(() -> orderService.checkout(member))
+        assertThatThrownBy(() -> orderFacade.checkout(member))
                 .isInstanceOfSatisfying(BusinessException.class,
                         e -> assertThat(e.getErrorCode()).isEqualTo(ErrorCode.OUT_OF_STOCK))
                 .hasMessageContaining("재고가 부족합니다. (남은 수량: 1개)");
@@ -81,12 +81,12 @@ class CartOrderFlowTest {
         Long member = fixture.member();
         Long ep = fixture.ongoingEventProduct(10, 1);
 
-        OrderDto.Response first = orderService.orderDirect(member, new OrderDto.DirectRequest(ep, 1));
-        assertErrorCode(() -> orderService.orderDirect(member, new OrderDto.DirectRequest(ep, 1)),
+        OrderDto.Response first = orderFacade.orderDirect(member, new OrderDto.DirectRequest(ep, 1));
+        assertErrorCode(() -> orderFacade.orderDirect(member, new OrderDto.DirectRequest(ep, 1)),
                 ErrorCode.PURCHASE_LIMIT_EXCEEDED);
 
-        orderService.cancel(member, first.orderId());
-        OrderDto.Response second = orderService.orderDirect(member, new OrderDto.DirectRequest(ep, 1));
+        orderFacade.cancel(member, first.orderId());
+        OrderDto.Response second = orderFacade.orderDirect(member, new OrderDto.DirectRequest(ep, 1));
 
         assertThat(second.status()).isEqualTo(OrderStatus.ORDERED);
         assertThat(fixture.remaining(ep)).isEqualTo(9);
@@ -96,7 +96,7 @@ class CartOrderFlowTest {
     void 빈_장바구니는_주문할_수_없다() {
         Long member = fixture.member();
 
-        assertErrorCode(() -> orderService.checkout(member), ErrorCode.CART_EMPTY);
+        assertErrorCode(() -> orderFacade.checkout(member), ErrorCode.CART_EMPTY);
     }
 
     private void assertErrorCode(Runnable action, ErrorCode expected) {

@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.eventcart.common.exception.BusinessException;
 import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.order.dto.OrderDto;
-import com.eventcart.order.service.OrderService;
+import com.eventcart.order.service.OrderFacade;
 import com.eventcart.support.TestFixture;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,7 +26,7 @@ import org.springframework.context.annotation.Import;
 class OrderConcurrencyTest {
 
     @Autowired
-    private OrderService orderService;
+    private OrderFacade orderFacade;
 
     @Autowired
     private TestFixture fixture;
@@ -73,7 +73,7 @@ class OrderConcurrencyTest {
             executor.submit(() -> {
                 try {
                     ready.await();
-                    orderService.orderDirect(memberId, new OrderDto.DirectRequest(eventProductId, 1));
+                    orderFacade.orderDirect(memberId, new OrderDto.DirectRequest(eventProductId, 1));
                     success.incrementAndGet();
                 } catch (BusinessException e) {
                     failures.merge(e.getErrorCode(), 1, Integer::sum);

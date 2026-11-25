@@ -2,6 +2,7 @@ package com.eventcart.order.repository;
 
 import com.eventcart.order.domain.OrderItem;
 import com.eventcart.order.domain.OrderStatus;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -18,4 +19,15 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     long sumQuantity(@Param("memberId") Long memberId,
                      @Param("eventProductId") Long eventProductId,
                      @Param("status") OrderStatus status);
+
+    /** Redis 재고 게이트 초기화용: 이벤트 상품별 회원 누적 구매 수량 */
+    @Query("""
+            select new com.eventcart.order.repository.BuyerQuantity(oi.order.member.id, sum(oi.quantity))
+            from OrderItem oi
+            where oi.eventProduct.id = :eventProductId
+              and oi.order.status = :status
+            group by oi.order.member.id
+            """)
+    List<BuyerQuantity> sumQuantityByMember(@Param("eventProductId") Long eventProductId,
+                                            @Param("status") OrderStatus status);
 }

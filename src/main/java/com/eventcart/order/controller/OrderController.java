@@ -1,6 +1,7 @@
 package com.eventcart.order.controller;
 
 import com.eventcart.order.dto.OrderDto;
+import com.eventcart.order.service.OrderFacade;
 import com.eventcart.order.service.OrderService;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -20,19 +21,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/orders")
 public class OrderController {
 
+    private final OrderFacade orderFacade;
     private final OrderService orderService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public OrderDto.Response orderDirect(@AuthenticationPrincipal Long memberId,
                                          @Valid @RequestBody OrderDto.DirectRequest request) {
-        return orderService.orderDirect(memberId, request);
+        return orderFacade.orderDirect(memberId, request);
     }
 
     @PostMapping("/checkout")
     @ResponseStatus(HttpStatus.CREATED)
     public OrderDto.Response checkout(@AuthenticationPrincipal Long memberId) {
-        return orderService.checkout(memberId);
+        return orderFacade.checkout(memberId);
     }
 
     @GetMapping
@@ -47,6 +49,6 @@ public class OrderController {
 
     @PostMapping("/{orderId}/cancel")
     public OrderDto.Response cancel(@AuthenticationPrincipal Long memberId, @PathVariable Long orderId) {
-        return orderService.cancel(memberId, orderId);
+        return orderFacade.cancel(memberId, orderId);
     }
 }
