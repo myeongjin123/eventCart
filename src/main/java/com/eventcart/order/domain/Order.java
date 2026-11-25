@@ -13,6 +13,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
@@ -26,7 +27,8 @@ import lombok.NoArgsConstructor;
 
 @Getter
 @Entity
-@Table(name = "orders")
+@Table(name = "orders",
+        indexes = @Index(name = "idx_orders_status_deadline", columnList = "status, payment_deadline"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Order extends BaseTimeEntity {
 
@@ -48,13 +50,18 @@ public class Order extends BaseTimeEntity {
     @Column(nullable = false)
     private LocalDateTime orderedAt;
 
+    /** 이 시각까지 결제하지 않으면 스케줄러가 EXPIRED로 바꾸고 재고를 돌려준다 */
+    @Column(nullable = false)
+    private LocalDateTime paymentDeadline;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<OrderItem> items = new ArrayList<>();
 
-    public Order(Member member, LocalDateTime orderedAt) {
+    public Order(Member member, LocalDateTime orderedAt, LocalDateTime paymentDeadline) {
         this.member = member;
         this.orderedAt = orderedAt;
-        this.status = OrderStatus.ORDERED;
+        this.paymentDeadline = paymentDeadline;
+        this.status = OrderStatus.PENDING_PAYMENT;
     }
 
     public void addItem(OrderItem item) {
@@ -63,11 +70,38 @@ public class Order extends BaseTimeEntity {
         totalPrice += item.getLineTotal();
     }
 
-    public void cancel() {
-        if (status != OrderStatus.ORDERED) {
+    /** 결제 가능한지 확인한다. 상태가 결제 대기가 아니거나 기한이 지났으면 예외. */
+    public void validatePayable(LocalDateTime now) {
+        if (status != OrderStatus.PENDING_PAYMENT) {
             throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
         }
+        if (now.isAfter(paymentDeadline)) {
+            throw new BusinessException(ErrorCode.PAYMENT_EXPIRED);
+        }
+    }
+
+    public void markPaid(LocalDateTime now) {
+        validatePayable(now);
+        status = OrderStatus.PAID;
+    }
+
+    /** 사용자 취소. 결제 대기·결제 완료에서만 가능하다. 반환값: 환불이 필요한지 */
+    public boolean cancel() {
+        if (!OrderStatus.ACTIVE.contains(status)) {
+            throw new BusinessException(ErrorCode.INVALID_ORDER_STATUS);
+        }
+        boolean needsRefund = status == OrderStatus.PAID;
         status = OrderStatus.CANCELED;
+        return needsRefund;
+    }
+
+    /** 결제 기한 만료. 이미 결제·취소됐으면 false (스케줄러가 조회한 뒤 상태가 바뀐 경우). */
+    public boolean expire(LocalDateTime now) {
+        if (status != OrderStatus.PENDING_PAYMENT || !now.isAfter(paymentDeadline)) {
+            return false;
+        }
+        status = OrderStatus.EXPIRED;
+        return true;
     }
 
     public boolean isOwnedBy(Long memberId) {

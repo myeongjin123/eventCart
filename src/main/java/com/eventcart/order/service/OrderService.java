@@ -10,15 +10,22 @@ import com.eventcart.member.service.MemberService;
 import com.eventcart.order.domain.Order;
 import com.eventcart.order.domain.OrderItem;
 import com.eventcart.order.domain.OrderStatus;
+import com.eventcart.order.OrderProperties;
 import com.eventcart.order.dto.OrderDto;
 import com.eventcart.order.repository.OrderItemRepository;
 import com.eventcart.order.repository.OrderRepository;
+import com.eventcart.payment.domain.Payment;
+import com.eventcart.payment.domain.PaymentStatus;
+import com.eventcart.payment.gateway.PaymentGateway;
+import com.eventcart.payment.repository.PaymentRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +48,9 @@ public class OrderService {
     private final EventProductRepository eventProductRepository;
     private final CartItemRepository cartItemRepository;
     private final MemberService memberService;
+    private final PaymentRepository paymentRepository;
+    private final PaymentGateway paymentGateway;
+    private final OrderProperties orderProperties;
     private final Clock clock;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -65,19 +75,40 @@ public class OrderService {
         return response;
     }
 
+    /** 사용자 취소. 결제 완료 주문이면 PG 환불까지 한 뒤 재고를 돌려준다. */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public OrderDto.Response cancel(Long memberId, Long orderId) {
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .filter(o -> o.isOwnedBy(memberId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
-        order.cancel();
-
-        Map<Long, Integer> quantities = new TreeMap<>();
-        order.getItems().forEach(item -> quantities.merge(item.getEventProduct().getId(), item.getQuantity(), Integer::sum));
-        List<EventProduct> locked = eventProductRepository.findAllByIdInForUpdate(quantities.keySet());
-        locked.forEach(ep -> ep.restore(quantities.get(ep.getId())));
-
+        boolean needsRefund = order.cancel();
+        if (needsRefund) {
+            Payment payment = paymentRepository.findByOrderIdAndStatus(orderId, PaymentStatus.APPROVED)
+                    .orElseThrow(() -> new IllegalStateException("결제 완료 주문에 승인 기록이 없음 orderId=" + orderId));
+            paymentGateway.refund(payment.getTransactionId(), payment.getAmount());
+            payment.markRefunded();
+        }
+        restoreStock(order);
         return OrderDto.Response.from(order);
+    }
+
+    /**
+     * 결제 기한이 지난 주문을 만료시키고 DB 재고를 돌려준다.
+     * 조회한 뒤 그 사이 결제·취소됐으면(락을 잡고 다시 보면 상태가 다름) 아무것도 하지 않는다.
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Optional<OrderDto.Response> expire(Long orderId, LocalDateTime now) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        if (!order.expire(now)) {
+            return Optional.empty();
+        }
+        restoreStock(order);
+        return Optional.of(OrderDto.Response.from(order));
+    }
+
+    public List<Long> findOverdueOrderIds(LocalDateTime now, int limit) {
+        return orderRepository.findIdsByStatusAndDeadlineBefore(OrderStatus.PENDING_PAYMENT, now, PageRequest.of(0, limit));
     }
 
     public List<OrderDto.Response> findMyOrders(Long memberId) {
@@ -105,14 +136,21 @@ public class OrderService {
 
         // 2) 락을 잡은 상태에서 기간·1인 제한·재고를 검증하고 차감한다
         LocalDateTime now = LocalDateTime.now(clock);
-        Order order = new Order(member, now);
+        Order order = new Order(member, now, now.plus(orderProperties.paymentTimeout()));
         for (EventProduct ep : locked) {
             int quantity = quantities.get(ep.getId());
             ep.validateOngoing(now);
-            int alreadyPurchased = (int) orderItemRepository.sumQuantity(member.getId(), ep.getId(), OrderStatus.ORDERED);
+            int alreadyPurchased = (int) orderItemRepository.sumQuantity(member.getId(), ep.getId(), OrderStatus.ACTIVE);
             ep.purchase(quantity, alreadyPurchased);
             order.addItem(new OrderItem(ep, quantity, ep.getEventPrice()));
         }
         return orderRepository.save(order);
+    }
+
+    private void restoreStock(Order order) {
+        Map<Long, Integer> quantities = new TreeMap<>();
+        order.getItems().forEach(item -> quantities.merge(item.getEventProduct().getId(), item.getQuantity(), Integer::sum));
+        List<EventProduct> locked = eventProductRepository.findAllByIdInForUpdate(quantities.keySet());
+        locked.forEach(ep -> ep.restore(quantities.get(ep.getId())));
     }
 }

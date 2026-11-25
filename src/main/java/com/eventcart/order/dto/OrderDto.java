@@ -17,11 +17,12 @@ public final class OrderDto {
     public record DirectRequest(@NotNull Long eventProductId, @Min(1) int quantity) {
     }
 
-    public record Response(Long orderId, OrderStatus status, int totalPrice, LocalDateTime orderedAt,
-                           List<ItemResponse> items) {
+    public record Response(Long orderId, Long memberId, OrderStatus status, int totalPrice,
+                           LocalDateTime orderedAt, LocalDateTime paymentDeadline, List<ItemResponse> items) {
 
         public static Response from(Order order) {
-            return new Response(order.getId(), order.getStatus(), order.getTotalPrice(), order.getOrderedAt(),
+            return new Response(order.getId(), order.getMember().getId(), order.getStatus(), order.getTotalPrice(),
+                    order.getOrderedAt(), order.getPaymentDeadline(),
                     order.getItems().stream().map(ItemResponse::from).toList());
         }
     }

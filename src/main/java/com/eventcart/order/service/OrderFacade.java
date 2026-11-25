@@ -5,12 +5,14 @@ import com.eventcart.common.exception.BusinessException;
 import com.eventcart.common.exception.ErrorCode;
 import com.eventcart.order.dto.OrderDto;
 import com.eventcart.order.stock.StockGate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -29,6 +31,7 @@ import org.springframework.stereotype.Service;
  * <p>일부러 @Transactional을 붙이지 않는다. DB 트랜잭션이 끝난 뒤(롤백 포함)에 반납해야
  * 반납한 재고를 다른 요청이 가져가도 DB와 어긋나지 않는다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OrderFacade {
@@ -57,6 +60,29 @@ public class OrderFacade {
         OrderDto.Response canceled = orderService.cancel(memberId, orderId);
         canceled.items().forEach(item -> stockGate.release(item.eventProductId(), memberId, item.quantity()));
         return canceled;
+    }
+
+    /**
+     * 결제 기한이 지난 주문을 만료시킨다 (스케줄러가 호출). 주문마다 트랜잭션을 따로 써서
+     * 한 건이 실패해도 나머지는 처리한다. DB 만료가 확정된 주문만 Redis 재고를 돌려준다.
+     *
+     * @return 만료시킨 주문 수
+     */
+    public int expireOverdue(LocalDateTime now, int batchSize) {
+        int expired = 0;
+        for (Long orderId : orderService.findOverdueOrderIds(now, batchSize)) {
+            try {
+                var result = orderService.expire(orderId, now);
+                if (result.isPresent()) {
+                    OrderDto.Response order = result.get();
+                    order.items().forEach(item -> stockGate.release(item.eventProductId(), order.memberId(), item.quantity()));
+                    expired++;
+                }
+            } catch (RuntimeException e) {
+                log.error("주문 만료 처리 실패 orderId={}", orderId, e);
+            }
+        }
+        return expired;
     }
 
     private OrderDto.Response withReservation(Long memberId, Map<Long, Integer> quantities,
