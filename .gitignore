@@ -6,3 +6,5 @@ build/
 out/
 .vscode/
 .DS_Store
+ci-secrets.sh
+deploy/.env

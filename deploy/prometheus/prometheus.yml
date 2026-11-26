@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s       # 선착순 이벤트는 수 초 안에 끝나므로 짧게
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: eventcart
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["app:8081"]   # 관리 포트 (외부 비공개)

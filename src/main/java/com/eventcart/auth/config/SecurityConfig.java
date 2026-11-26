@@ -40,6 +40,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/products", "/api/events", "/api/events/*/products")
                         .hasRole("ADMIN")
                         .requestMatchers("/error").permitAll()
+                        // 지표·헬스체크: 관리 포트(8081)에만 열려 있고 외부에 공개하지 않는다
+                        .requestMatchers("/actuator/**").permitAll()
                         // 나머지(장바구니, 주문)는 로그인 필요
                         .anyRequest().authenticated())
 

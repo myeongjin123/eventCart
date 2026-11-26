@@ -6,6 +6,7 @@
 
 - Java 21 · Spring Boot 3.5 · Spring Data JPA · Spring Security(JWT) · MySQL 8 · Redis · Gradle
 - 테스트: JUnit 5 · Testcontainers(MySQL·Redis) · k6 부하 테스트 · GitHub Actions
+- 배포·운영: Docker · docker compose · GHCR · Actuator · Prometheus · Grafana
 - 설계 문서: [docs/DESIGN.md](docs/DESIGN.md) (요구사항, ERD, API, 동시성 전략, 로드맵)
 
 ## 실행
@@ -21,6 +22,31 @@ docker compose up -d
 # 2') MySQL 없이 H2로 실행 (Redis는 필요)
 ./gradlew bootRun --args='--spring.profiles.active=h2'
 ```
+
+## 배포 (Docker, 서버 한 대)
+
+```bash
+cp deploy/.env.example deploy/.env      # 비밀번호, JWT_SECRET(openssl rand -base64 48) 채우기
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+```
+
+| 서비스 | 주소 | 공개 |
+|---|---|---|
+| API | `:8080` | 외부 |
+| Grafana | `:3000` (admin / `GRAFANA_ADMIN_PASSWORD`) | 외부 |
+| Prometheus | `127.0.0.1:9090` | 서버 안에서만 |
+| 지표·헬스체크 | `app:8081/actuator/prometheus`, `/actuator/health` | 내부망만 |
+| MySQL, Redis | - | 내부망만 |
+
+- `main`에 합쳐지면 이미지가 `ghcr.io/myeongjin123/eventcart:latest`(비공개)로 올라간다. 서버에서는 `.env`의 `APP_IMAGE`에 넣고 `docker compose pull && docker compose up -d`.
+- PR마다 **Deploy check** 워크플로가 이 스택을 러너에서 그대로 띄워 부하 → 지표 수집 → 대시보드까지 확인한다.
+
+## 모니터링 (Grafana 대시보드 "EventCart")
+
+- 주문 결과(건/초): 성공·품절·1인 제한 초과, **Redis에서 막았는지(gate) / DB까지 갔는지(db)**
+- 주문 API 응답 시간 p50·p95·p99
+- DB 커넥션: 사용 중 / **대기 중** (DB 락 병목이 여기 보인다)
+- HTTP 상태별 요청, JVM 힙, CPU, 만료 주문 수
 
 ## 빠른 시나리오 (curl)
 
@@ -103,6 +129,6 @@ curl -s -XPOST localhost:8080/api/orders/1/payment -H "$H" -H "$U" -d '{"method"
 
 자세한 조건과 해석: [docs/LOAD_TEST.md](docs/LOAD_TEST.md)
 
-## 다음 단계
+## 로드맵
 
-로드맵은 [docs/DESIGN.md §9](docs/DESIGN.md#9-로드맵) 참고. 바로 다음은 **7단계: Docker 배포와 모니터링**(Actuator, Prometheus, Grafana).
+1~7단계 완료. 남은 개선 과제는 [docs/DESIGN.md §10](docs/DESIGN.md#10-로드맵) 참고.

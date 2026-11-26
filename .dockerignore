@@ -1,0 +1,12 @@
+.git
+.github
+.gradle
+.idea
+build
+out
+deploy
+docs
+load-test
+results
+*.md
+.env
