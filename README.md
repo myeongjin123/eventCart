@@ -44,10 +44,12 @@ curl -s -XPOST localhost:8080/api/members -H "$H" -d '{"email":"a@test.com","nam
 U="Authorization: Bearer $(login a@test.com password123)"
 curl -s localhost:8080/api/events/ongoing
 curl -s -XPOST localhost:8080/api/cart/items -H "$H" -H "$U" -d '{"eventProductId":1,"quantity":1}'
-curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
+curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"          # → PENDING_PAYMENT, 10분 안에 결제
+curl -s -XPOST localhost:8080/api/orders/1/payment -H "$H" -H "$U" -d '{"method":"CARD"}'   # → PAID
+# "DECLINED_CARD"로 결제하면 거절(FAILED)되고 주문은 결제 대기로 남는다
 ```
 
-> 1단계 DB를 쓰던 경우 `member` 테이블에 컬럼이 추가됐으므로 `docker compose down -v`로 초기화 후 실행한다.
+> 이전 단계 DB를 쓰던 경우 테이블 구조와 주문 상태 값이 바뀌었으므로 `docker compose down -v`로 초기화 후 실행한다.
 
 ## 인증·권한 (2단계)
 
@@ -61,6 +63,17 @@ curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
 - 비밀번호는 BCrypt 해시로 저장, 응답에 포함하지 않음
 - 서명 키는 환경변수 `JWT_SECRET`(Base64, 32바이트 이상)으로 주입
 - 토큰 없음·위조·만료 → `401 UNAUTHORIZED`, 권한 부족 → `403 FORBIDDEN`
+
+## 주문·결제 흐름 (6단계)
+
+```
+주문 → PENDING_PAYMENT (재고 차감, 결제 기한 10분)
+        ├─ 결제 승인 → PAID ─ 취소 → CANCELED (환불 + 재고 반납)
+        ├─ 취소 → CANCELED (재고 반납)
+        └─ 기한 지남 → EXPIRED (스케줄러가 30초마다, 재고 반납)
+```
+
+결제·취소·만료는 주문 행 락 + 상태 재확인으로 처리해, 결제와 만료가 동시에 와도 한쪽만 반영된다.
 
 ## 동시성 처리 요약
 
@@ -92,4 +105,4 @@ curl -s -XPOST localhost:8080/api/orders/checkout -H "$U"
 
 ## 다음 단계
 
-로드맵은 [docs/DESIGN.md §8](docs/DESIGN.md#8-로드맵) 참고. 바로 다음은 **6단계: 결제 모의 연동**과 미결제 주문 자동 취소.
+로드맵은 [docs/DESIGN.md §9](docs/DESIGN.md#9-로드맵) 참고. 바로 다음은 **7단계: Docker 배포와 모니터링**(Actuator, Prometheus, Grafana).

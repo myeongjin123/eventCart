@@ -25,7 +25,8 @@ public enum ErrorCode {
     OUT_OF_STOCK(HttpStatus.CONFLICT, "재고가 부족합니다."),
     PURCHASE_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "1인 구매 제한 수량을 초과했습니다."),
     ORDER_NOT_FOUND(HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다."),
-    INVALID_ORDER_STATUS(HttpStatus.BAD_REQUEST, "현재 주문 상태에서는 처리할 수 없습니다.");
+    INVALID_ORDER_STATUS(HttpStatus.BAD_REQUEST, "현재 주문 상태에서는 처리할 수 없습니다."),
+    PAYMENT_EXPIRED(HttpStatus.BAD_REQUEST, "결제 기한이 지났습니다.");
 
     private final HttpStatus status;
     private final String message;

@@ -21,6 +21,11 @@ app:
     access-token-validity: 1h
   stock-gate:
     key-prefix: eventcart
+  order:
+    payment-timeout: 10m          # 주문 후 결제 기한
+    expiration:
+      enabled: true
+      interval: PT30S             # 만료 주문 확인 주기
   admin:
     # 비어 있으면 관리자 계정을 만들지 않는다
     email: ${ADMIN_EMAIL:}

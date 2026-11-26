@@ -100,7 +100,7 @@ public class StockGate {
                 String.valueOf(ep.getRemainingQuantity()),
                 String.valueOf(ep.getPerMemberLimit()),
                 ep.getProduct().getName()));
-        for (BuyerQuantity buyer : orderItemRepository.sumQuantityByMember(eventProductId, OrderStatus.ORDERED)) {
+        for (BuyerQuantity buyer : orderItemRepository.sumQuantityByMember(eventProductId, OrderStatus.ACTIVE)) {
             args.add(String.valueOf(buyer.memberId()));
             args.add(String.valueOf(buyer.quantity()));
         }

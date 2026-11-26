@@ -42,7 +42,7 @@ class CartOrderFlowTest {
         assertThat(cart.totalPrice()).isEqualTo(5_000 * 5);
 
         OrderDto.Response order = orderFacade.checkout(member);
-        assertThat(order.status()).isEqualTo(OrderStatus.ORDERED);
+        assertThat(order.status()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(order.totalPrice()).isEqualTo(25_000);
         assertThat(fixture.remaining(ep1)).isEqualTo(8);
         assertThat(fixture.remaining(ep2)).isEqualTo(7);
@@ -86,7 +86,7 @@ class CartOrderFlowTest {
         orderFacade.cancel(member, first.orderId());
         OrderDto.Response second = orderFacade.orderDirect(member, new OrderDto.DirectRequest(ep, 1));
 
-        assertThat(second.status()).isEqualTo(OrderStatus.ORDERED);
+        assertThat(second.status()).isEqualTo(OrderStatus.PENDING_PAYMENT);
         assertThat(fixture.remaining(ep)).isEqualTo(9);
     }
 
