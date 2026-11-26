@@ -68,8 +68,9 @@ export function setup() {
     const fmt = (d) => d.toISOString().slice(0, 19);
     const event = post('/api/events', {
         name: `부하테스트-${MODE}-${now.getTime()}`,
-        startAt: fmt(new Date(now.getTime() - 3600_000)),
-        endAt: fmt(new Date(now.getTime() + 3600_000)),
+        // 서버 시간대(UTC/KST)와 상관없이 진행 중이도록 앞뒤 하루씩
+        startAt: fmt(new Date(now.getTime() - 86400_000)),
+        endAt: fmt(new Date(now.getTime() + 86400_000)),
     }, admin).json();
 
     const eventProductIds = [];

@@ -1,0 +1,107 @@
+name: Deploy check
+
+# 배포용 스택(deploy/docker-compose.yml)을 러너에서 그대로 띄워 보고,
+# 부하를 준 뒤 Prometheus에 지표가 쌓이고 Grafana 대시보드가 올라오는지 확인한다.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'deploy/**'
+      - 'src/main/**'
+      - 'build.gradle'
+      - '.github/workflows/deploy-check.yml'
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env (테스트용 임시 비밀값)
+        run: |
+          {
+            echo "MYSQL_PASSWORD=$(openssl rand -hex 16)"
+            echo "MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)"
+            echo "JWT_SECRET=$(openssl rand -base64 48 | tr -d '\n')"
+            echo "ADMIN_EMAIL=admin@eventcart.dev"
+            echo "ADMIN_PASSWORD=$(openssl rand -hex 12)"
+            echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 12)"
+          } > .env
+          grep -E '^(ADMIN_PASSWORD|GRAFANA_ADMIN_PASSWORD)=' .env | sed 's/^/export /' > ../ci-secrets.sh
+
+      - name: Build and start stack
+        run: docker compose --env-file .env up -d --build --wait --wait-timeout 300
+
+      - name: Wait for app
+        run: |
+          for i in $(seq 1 90); do
+            curl -sf http://localhost:8080/api/events/ongoing > /dev/null && echo "app up after ${i}s" && exit 0
+            sleep 1
+          done
+          docker compose logs app; exit 1
+
+      - name: Management port is not public
+        run: |
+          if curl -s --max-time 3 http://localhost:8081/actuator/health; then
+            echo "8081 should not be published"; exit 1
+          fi
+          echo "OK: 8081은 외부에 열려 있지 않음 (Prometheus는 내부망으로 수집 → 아래 단계에서 확인)"
+
+      - name: Load (k6, 회원 300명 · 재고 100)
+        run: |
+          . ../ci-secrets.sh
+          docker run --rm --network host -u "$(id -u)" \
+            -v "$PWD/../load-test:/scripts:ro" \
+            -e MODE=hot -e USERS=300 -e VUS=50 \
+            -e ADMIN_EMAIL=admin@eventcart.dev -e ADMIN_PASSWORD="$ADMIN_PASSWORD" -e OUT_DIR=/tmp \
+            grafana/k6:0.54.0 run --quiet /scripts/order-rush.js
+
+      - name: Prometheus has the metrics
+        run: |
+          sleep 12   # scrape 주기(5s) 두 번 이상
+          q() { curl -sf --get http://localhost:9090/api/v1/query --data-urlencode "query=$1" | jq -r '.data.result[0].value[1] // "0"'; }
+          target=$(curl -sf http://localhost:9090/api/v1/targets | jq -r '.data.activeTargets[0].health')
+          success=$(q 'sum(eventcart_orders_total{result="success"})')
+          soldout=$(q 'sum(eventcart_orders_total{result="sold_out"})')
+          gate=$(q 'sum(eventcart_orders_total{stage="gate"})')
+          p95=$(q 'histogram_quantile(0.95, sum by (le) (http_server_requests_seconds_bucket{uri="/api/orders",method="POST"}))')
+          echo "target=$target success=$success sold_out=$soldout gate=$gate p95=${p95}s"
+          {
+            echo "## 배포 스택 확인"
+            echo ""
+            echo "| 항목 | 값 |"
+            echo "|---|---|"
+            echo "| Prometheus 수집 대상 | $target |"
+            echo "| 주문 성공 / 품절 | $success / $soldout |"
+            echo "| Redis에서 끝난 요청 | $gate |"
+            echo "| 주문 API p95 (누적) | ${p95}s |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$target" = "up"
+          test "$success" = "100"
+          test "$soldout" = "200"
+
+      - name: Grafana dashboard is provisioned
+        run: |
+          . ../ci-secrets.sh
+          curl -sf http://localhost:3000/api/health | jq .
+          title=$(curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" http://localhost:3000/api/dashboards/uid/eventcart | jq -r .dashboard.title)
+          echo "dashboard: $title"
+          test "$title" = "EventCart"
+          # 대시보드 첫 패널 쿼리를 Grafana를 거쳐 실행해 본다 (데이터소스 연결 확인)
+          curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" -H 'Content-Type: application/json' \
+            http://localhost:3000/api/ds/query \
+            -d '{"queries":[{"refId":"A","datasource":{"uid":"prometheus"},"expr":"sum(eventcart_orders_total)","instant":true}],"from":"now-5m","to":"now"}' \
+            | jq -e '.results.A.frames[0].data.values[1][0] > 0'
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v

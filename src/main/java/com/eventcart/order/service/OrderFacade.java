@@ -39,6 +39,7 @@ public class OrderFacade {
     private final OrderService orderService;
     private final StockGate stockGate;
     private final CartItemRepository cartItemRepository;
+    private final OrderMetrics metrics;
 
     public OrderDto.Response orderDirect(Long memberId, OrderDto.DirectRequest request) {
         Map<Long, Integer> quantities = Map.of(request.eventProductId(), request.quantity());
@@ -82,20 +83,26 @@ public class OrderFacade {
                 log.error("주문 만료 처리 실패 orderId={}", orderId, e);
             }
         }
+        metrics.expired(expired);
         return expired;
     }
 
     private OrderDto.Response withReservation(Long memberId, Map<Long, Integer> quantities,
                                               Supplier<OrderDto.Response> order) {
         List<Map.Entry<Long, Integer>> reserved = new ArrayList<>();
+        boolean atGate = true;
         try {
             for (Map.Entry<Long, Integer> entry : new TreeMap<>(quantities).entrySet()) {
                 stockGate.reserve(entry.getKey(), memberId, entry.getValue());
                 reserved.add(entry);
             }
-            return order.get();
+            atGate = false;
+            OrderDto.Response response = order.get();
+            metrics.success();
+            return response;
         } catch (RuntimeException e) {
             reserved.forEach(r -> stockGate.release(r.getKey(), memberId, r.getValue()));
+            metrics.failure(e, atGate);
             throw e;
         }
     }

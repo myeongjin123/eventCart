@@ -14,6 +14,26 @@ spring:
         default_batch_fetch_size: 100
         format_sql: true
 
+management:
+  # 지표·헬스체크는 별도 포트. 외부(로드밸런서)에는 8080만 열고 8081은 내부망(Prometheus)만 접근하게 한다.
+  server:
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health, info, prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true           # /actuator/health/liveness, /readiness
+      show-details: never
+  metrics:
+    tags:
+      application: eventcart
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true   # Grafana에서 p95/p99 계산용
+
 app:
   jwt:
     # 운영에서는 반드시 환경변수 JWT_SECRET로 교체 (Base64, 32바이트 이상)
@@ -68,3 +88,32 @@ app:
   admin:
     email: ${ADMIN_EMAIL:admin@eventcart.dev}
     password: ${ADMIN_PASSWORD:admin1234!}
+
+---
+# Docker 배포용 (deploy/docker-compose.yml). 접속 정보는 모두 환경변수로 받는다.
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+  jpa:
+    hibernate:
+      # 사이드 프로젝트라 update로 둔다. 실제 운영이면 Flyway로 스키마 이력을 관리하고 validate로 바꾼다.
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+app:
+  jwt:
+    secret: ${JWT_SECRET}         # 기본값 없음: 없으면 기동 실패
+logging:
+  level:
+    root: INFO
+    org.hibernate.SQL: WARN
+
