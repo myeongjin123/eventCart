@@ -52,6 +52,8 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 
 로컬 실행 시 관리자 계정 `admin@eventcart.dev` / `admin1234!`가 자동 생성된다. (`ADMIN_EMAIL`, `ADMIN_PASSWORD`로 변경)
 
+> **개발용 기본값 안내** · 저장소에 보이는 비밀번호와 키(`admin1234!`, `application.yml`의 JWT 키, `docker-compose.yml`의 DB 비밀번호, 테스트용 키)는 **로컬 개발·테스트 전용**이다. 배포용 `prod` 프로필에는 기본값이 없고, 모든 비밀값을 `deploy/.env`(git 제외) → 환경변수로만 받는다. JWT_SECRET이 없으면 앱이 시작되지 않는다.
+
 ```bash
 H='Content-Type: application/json'
 login() { curl -s -XPOST localhost:8080/api/auth/login -H "$H" -d "{\"email\":\"$1\",\"password\":\"$2\"}" | sed 's/.*"accessToken":"\([^"]*\)".*/\1/'; }
