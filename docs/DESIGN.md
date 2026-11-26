@@ -19,6 +19,7 @@
 | Build | Gradle (Groovy DSL) | |
 | Test | JUnit 5, AssertJ, SpringBootTest, Testcontainers | 동시성 테스트, 실제 MySQL·Redis |
 | 부하 테스트 | k6 + GitHub Actions | [LOAD_TEST.md](LOAD_TEST.md) |
+| 배포·운영 | Docker, compose, GHCR, Actuator, Prometheus, Grafana | 7단계 |
 
 ## 3. 요구사항
 
@@ -219,7 +220,21 @@ OrderFacade (트랜잭션 없음)
 - 반납은 트랜잭션이 끝난 뒤(롤백 포함)에 한다. 롤백 전에 반납하면 그 재고를 다른 요청이 먼저 예약할 수 있다.
 - 남은 과제: Redis와 DB 재고를 주기적으로 맞추는 대사(reconciliation) 작업, 반납 실패 재시도.
 
-## 8. 패키지 구조
+## 8. 배포·모니터링 (7단계)
+
+```
+[외부] ──8080──▶ app ──▶ MySQL, Redis          (내부망)
+                  └─8081 /actuator/prometheus ◀── Prometheus (5초마다) ◀── Grafana ◀──3000── [외부]
+```
+
+- 이미지: 멀티스테이지 빌드, Spring Boot 레이어 분리(의존성/코드), root 아닌 사용자, `prod` 프로필.
+- 비밀값(DB 비밀번호, JWT_SECRET)은 `.env` → 환경변수. `prod`에는 기본값이 없어 빠지면 기동 실패.
+- 관리 포트(8081)는 외부에 열지 않는다. 헬스체크 `/actuator/health/liveness`, `/readiness`.
+- 비즈니스 지표 `eventcart_orders_total{result, stage}`: stage=gate 비율로 Redis 게이트 효과를 본다. 태그 값은 고정 목록만 쓴다.
+- 검증: PR마다 Deploy check 워크플로가 스택 기동 → k6(회원 300, 재고 100) → Prometheus에서 성공 100·품절 200 확인 → Grafana 대시보드·데이터소스 확인. 첫 실행 결과: 품절 200건 모두 Redis에서 거절, 주문 API p95 약 0.86초.
+- 남은 과제: HTTPS(Nginx/Caddy 리버스 프록시), Flyway 스키마 관리, 알림(Grafana Alerting), 클라우드(AWS/NCP) 서버 배포 자동화.
+
+## 9. 패키지 구조
 
 ```
 com.eventcart
@@ -235,7 +250,7 @@ com.eventcart
 
 도메인별 패키지 안에 `controller / service / repository / domain / dto`를 둔다.
 
-## 9. 로드맵
+## 10. 로드맵
 
 | 단계 | 내용 | 산출물 |
 |---|---|---|
@@ -245,4 +260,13 @@ com.eventcart
 | 4 (완료) | Redis 재고 게이트 (Lua 원자 예약 + 실패 시 반납) | [LOAD_TEST.md](LOAD_TEST.md) 전후 비교 |
 | 5 (완료) | Testcontainers(MySQL·Redis), GitHub Actions CI | 통합 테스트가 실제 MySQL 8·Redis에서 실행 |
 | 6 (완료) | 결제 모의 연동 + 미결제 주문 자동 만료(스케줄러) | 주문 상태 머신, PaymentFlowTest |
-| 7 | Docker 배포 (AWS/NCP), 모니터링 (Actuator + Prometheus/Grafana) | 운영 경험 |
+| 7 (완료) | Docker 배포 스택, 모니터링 (Actuator + Prometheus/Grafana), GHCR 이미지 | Deploy check 워크플로 |
+
+### 이후 개선 후보
+
+| 우선순위 | 과제 | 이유 |
+|---|---|---|
+| 1 | 실제 서버 배포 (AWS Lightsail/EC2, NCP) + HTTPS | 포트폴리오에 접속 가능한 주소 |
+| 2 | 성공 주문 대기 줄이기 (락 안 조회 축소, 원자적 UPDATE, 또는 대기열 비동기 처리) | 부하 테스트에서 성공 p95 1.5~2.5초 |
+| 3 | 실제 PG 연동 구조 (`PAYING` 상태, 웹훅, 멱등 키) | 락 안에서 외부 호출 제거 |
+| 4 | Flyway, ShedLock, Redis-DB 재고 대사 작업 | 운영 안정성 |
